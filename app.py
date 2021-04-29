@@ -9,7 +9,7 @@ async def handle(request):
 
 def main(args: Any = None) -> None:
     app = web.Application()
-    app.add_routes([web.get('/', handle)])
+    app.add_routes([web.get('/post', handle)])
     web.run_app(app)
 
 
