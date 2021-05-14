@@ -1,3 +1,0 @@
-capacitor
-processor
-inductive
