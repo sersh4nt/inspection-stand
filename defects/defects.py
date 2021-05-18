@@ -1,8 +1,9 @@
 import sys
 
+import PyQt5.sip
 import cv2
 import imutils
-import numpy as np
+import qimage2ndarray
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -11,6 +12,8 @@ from design import Ui_mainWindow
 from libs.camera import Camera
 from libs.network_handler import NetworkHandler
 from libs.yolo.plots import *
+
+MARGIN = 20
 
 
 class DefectsWindow(QMainWindow, Ui_mainWindow):
@@ -26,6 +29,7 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
         self.has_bad_legs = False
         self.has_object = False
         self.cnt_img = 0
+        self.cnt_defect = 0
         self.detections = []
 
         self.bg_sub = cv2.createBackgroundSubtractorMOG2(4, detectShadows=False)
@@ -34,8 +38,21 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
         self.bg_sub.apply(bg_image)
 
         self.main_view.new_frame.connect(self.new_frame)
+        self.next_defect_button.clicked.connect(self.incr_cnt)
+        self.prev_defect_button.clicked.connect(self.decr_cnt)
 
         self.network_handler = NetworkHandler(os.path.join(os.getcwd(), 'weights'))
+
+    def incr_cnt(self):
+        if self.has_object:
+            self.cnt_defect += 1
+            self.cnt_defect %= len(self.detections)
+
+    def decr_cnt(self):
+        if self.has_object:
+            self.cnt_defect -= 1
+            if self.cnt_defect < 0:
+                self.cnt_defect += len(self.detections)
 
     @pyqtSlot(np.ndarray)
     def new_frame(self, frame):
@@ -53,6 +70,7 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
             self.has_holes = False
             self.has_scratches = False
             self.has_bad_legs = False
+            self.cnt_defect = 0
 
         if self.has_object:
             if self.cnt_img < 10:
@@ -92,6 +110,23 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
         status_painter.drawEllipse(0, 0, w, w)
         status_painter.end()
         self.status.setPixmap(pixmap.scaled(self.status.width(), self.status.height(), Qt.KeepAspectRatio))
+
+        if self.has_object:
+            for *xyxy, _, cls in [self.detections[self.cnt_defect]]:
+                he, wi = self.camera.frame.shape[:2]
+                cutout = self.camera.frame[
+                    max(0, int(xyxy[1]) - MARGIN): min(he - 1, int(xyxy[3]) + MARGIN),
+                    max(0, int(xyxy[0]) - MARGIN): min(wi - 1, int(xyxy[2]) + MARGIN)
+                ]
+                scale = min(self.defect_view.height() / cutout.shape[0], self.defect_view.width() / cutout.shape[1])
+                cutout = cv2.resize(cutout, None, fx=scale, fy=scale)
+                pmap = QPixmap(self.defect_view.size())
+                pmap.fill(Qt.transparent)
+                defect_painter = QPainter(pmap)
+                defect_painter.drawImage(QPoint(0, 0), qimage2ndarray.array2qimage(cutout))
+                self.defect_view.setPixmap(
+                    pmap.scaled(self.defect_view.width(), self.defect_view.height(), Qt.KeepAspectRatio))
+                defect_painter.end()
 
 
 if __name__ == '__main__':

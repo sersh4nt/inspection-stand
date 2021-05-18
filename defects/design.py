@@ -62,6 +62,7 @@ class Ui_mainWindow(object):
         self.verticalLayout.addWidget(self.label_7)
         self.defect_view = QtWidgets.QLabel(self.centralwidget)
         self.defect_view.setObjectName("defect_view")
+        self.defect_view.setSizePolicy(sizePolicy)
         self.verticalLayout.addWidget(self.defect_view)
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")

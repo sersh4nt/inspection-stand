@@ -43,7 +43,7 @@ class Camera(QObject):
         if self.mirrored:
             self.frame = cv2.flip(self.frame, 1)
         h, w = self.frame.shape[:2]
-        self.frame = self.frame[: h - 5, 20: w - 250]
+        self.frame = cv2.rotate(self.frame[: h - 5, 20: w - 250], cv2.ROTATE_180)
         self.new_frame.emit(self.frame)
 
     @property
