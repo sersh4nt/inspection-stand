@@ -27,7 +27,9 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
 
         self.network_handler = NetworkHandler(os.path.join(os.getcwd(), 'weights'))
 
-    def paintEvent(self, ev):
+        self.update()
+
+    def paintEvent(self, *args, **kwargs):
         scratch_painter = QPainter(self.scratch_indicator.pixmap())
         hole_painter = QPainter(self.hole_indicator.pixmap())
         leg_painter = QPainter(self.leg_indicator.pixmap())
