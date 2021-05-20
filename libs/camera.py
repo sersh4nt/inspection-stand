@@ -17,6 +17,7 @@ class Camera(QObject):
     def __init__(self, camera_id=0, mirrored=False, parent=None):
         super(Camera, self).__init__(parent)
         self.mirrored = mirrored
+        self.frame = None
 
         if platform.system() == 'Linux':
             command = "v4l2-ctl -d 0 -c exposure_auto=3"
@@ -36,12 +37,14 @@ class Camera(QObject):
 
     @pyqtSlot()
     def _query_frame(self):
-        ret, frame = self.cap.read()
+        ret, self.frame = self.cap.read()
         if not ret:
             self.camera_err.emit()
         if self.mirrored:
-            frame = cv2.flip(frame, 1)
-        self.new_frame.emit(frame)
+            self.frame = cv2.flip(self.frame, 1)
+        h, w = self.frame.shape[:2]
+        self.frame = cv2.rotate(self.frame[: h - 5, 20: w - 250], cv2.ROTATE_180)
+        self.new_frame.emit(self.frame)
 
     @property
     def paused(self):
@@ -64,10 +67,6 @@ class Camera(QObject):
         if fps <= 0:
             fps = self._DEFAULT_FPS
         return fps
-
-    def get_frame(self):
-        ret, frame = self.cap.read()
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class CameraWidget(QLabel):

@@ -10,6 +10,8 @@ class NetworkHandler:
         set_logging()
         self.path = path
         self.data = []
+        self.names = []
+        self.colours = [[random.randint(0, 255) for _ in range(3)] for _ in range(10000)]
         self.device = select_device('0' if torch.cuda.is_available() else 'cpu')
         self.half = False
         self.model = None
@@ -20,7 +22,7 @@ class NetworkHandler:
         torch.multiprocessing.set_start_method('spawn')
 
     def load_network(self):
-        path = os.path.join(self.path, 'last.pt')
+        path = os.path.join(self.path, 'defects.pt')
         self.half = self.device.type != 'cpu'
         try:
             del self.model
@@ -40,8 +42,7 @@ class NetworkHandler:
 
         possible_result = []
 
-        names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
-        colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+        self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
 
         self.image_size = check_img_size(640, s=self.stride)
 
@@ -57,13 +58,10 @@ class NetworkHandler:
         predictions = self.model(img)[0]
         predictions = non_max_suppression(predictions, 0.25, 0.45)
 
+        ans = []
         for detection in predictions:
             if len(detection):
                 detection[:, :4] = scale_coords(img.shape[2:], detection[:, :4], image.shape).round()
-
-                for *xyxy, conf, cls in reversed(detection):
-                    label = f'{names[int(cls)]} {conf:.2f}'
-                    possible_result.append(label)
-                    plot_one_box(xyxy, image, label=label, color=colors[int(cls)], line_thickness=2)
-
-        return possible_result, image
+                if len(detection) > len(ans):
+                    ans = detection
+        return ans

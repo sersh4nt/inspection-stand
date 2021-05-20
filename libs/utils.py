@@ -58,7 +58,7 @@ def yolo2points(xcen, ycen, w, h, img_w, img_h):
 
 def shape2dict(shape):
     return dict(
-        label=shape.label,
+        label=shape.scratch_indicator,
         line_color=shape.line_color.getRgb(),
         fill_color=shape.fill_color.getRgb(),
         points=[(p.x(), p.y()) for p in shape.points],
