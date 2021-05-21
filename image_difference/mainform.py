@@ -6,15 +6,12 @@ from PyQt5.QtGui import (QPixmap, QImage)
 from PyQt5.QtCore import (pyqtSlot, pyqtSignal, Qt, QDir)
 import cv2
 import sys
-import imutils
 import numpy as np
 from imagedifference import imageDifference
-from streamcapture import streamCapture
 
 class mainForm(QMainWindow):
     get_template_filename = pyqtSignal(str)
     get_compare_image_filename = pyqtSignal(str)
-    exit_program = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -22,14 +19,7 @@ class mainForm(QMainWindow):
         self.grid_layout = None
         self.output_picture = None
         self.initUI()
-        if self.webcam_switcher.count() > 0:
-            self.webcam_switcher.currentIndex
-            self.stream = streamCapture(self.webcam_switcher.currentIndex())
-            self.stream.getframe.connect(self.mat2qimage)
-            self.stream.start()
-            self.exit_program.connect(self.stream.exit)
     
-    ### отрисовка интерфейса 
     def initUI(self):
         self.screen_resolution = QApplication.desktop().screenGeometry()
         # self.resize(self.screen_resolution.size())
@@ -135,48 +125,8 @@ class mainForm(QMainWindow):
         result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
         self.output_picture.setPixmap(QPixmap.fromImage(result_image))
 
-    pyqtSlot(np.ndarray)
-    def set_template_picture(self, image):
-        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.mask_picture.size().width(),
-        #                                  self.mask_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.template_image.size().width())
-        h, w, ch = rgbImage.shape
-        bytesPerLine = ch * w
-        result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-        self.template_image.setPixmap(QPixmap.fromImage(result_image))
-
-    pyqtSlot(np.ndarray)
-    def set_diff_picture(self, image):
-        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.diff_picture.size().width(),
-        #                                  self.diff_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.diff_picture.size().width())                                 
-        h, w, ch = rgbImage.shape
-        bytesPerLine = ch * w
-        result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-        self.diff_picture.setPixmap(QPixmap.fromImage(result_image))
-    
-    pyqtSlot(np.ndarray)
-    def set_orig_picture(self, image):
-        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.orig_picture.size().width(),
-        #                                  self.orig_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.orig_picture.size().width())                                 
-        h, w, ch = rgbImage.shape
-        bytesPerLine = ch * w
-        result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-        self.orig_picture.setPixmap(QPixmap.fromImage(result_image))
-    
-    def closeEvent(self, event):
-        self.exit_program.emit()
-        event.accept()
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    # stylesheetfile = "example.stylesheet"
-    # with open(stylesheetfile,"r") as fh:
-    #     app.setStyleSheet(fh.read())
     main = mainForm()
     image_difference_thread = imageDifference()
     main.get_template_filename.connect(image_difference_thread.set_template_image)

@@ -24,6 +24,8 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
         self.camera = Camera(0)
         self.main_view.initialize(camera=self.camera)
 
+
+
         self.has_scratches = False
         self.has_holes = False
         self.has_bad_legs = False
@@ -111,7 +113,7 @@ class DefectsWindow(QMainWindow, Ui_mainWindow):
         status_painter.end()
         self.status.setPixmap(pixmap.scaled(self.status.width(), self.status.height(), Qt.KeepAspectRatio))
 
-        if self.has_object:
+        if self.has_object and len(self.detections):
             for *xyxy, _, cls in [self.detections[self.cnt_defect]]:
                 he, wi = self.camera.frame.shape[:2]
                 cutout = self.camera.frame[
