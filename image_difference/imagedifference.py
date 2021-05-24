@@ -6,8 +6,6 @@ import imutils
 class imageDifference(QThread):
     output_image_defference = pyqtSignal(np.ndarray)
     set_template_picture = pyqtSignal(np.ndarray)
-    set_diff_image = pyqtSignal(np.ndarray)
-    set_orig_image = pyqtSignal(np.ndarray)
 
     def __init__(self):
         super().__init__()
@@ -16,7 +14,6 @@ class imageDifference(QThread):
         self.template_image = None
         self.template_mask = None
         self.current_image = None
-        self.current_image_grayscale = None
         self.diff_image = None
         self.background_substractor = cv2.createBackgroundSubtractorMOG2(1, 25, False)
         self.countourThresh = 6000
@@ -38,7 +35,6 @@ class imageDifference(QThread):
         self.busy = True
         buf_image = cv2.GaussianBlur(self.current_image, (21, 21), 0)
         buf_image = self.background_substractor.apply(buf_image, self.template_mask, 0)
-
         kernel = np.ones((3,3),np.uint8)
         buf_image = cv2.dilate(buf_image,kernel,iterations=2)
 
@@ -63,6 +59,7 @@ class imageDifference(QThread):
 
     @pyqtSlot(str)
     def set_template_image(self, filename):
+        print("set template")
         self.template_image = cv2.imread(filename)
         self.set_template_picture.emit(self.template_image.copy())
         self.template_image = cv2.GaussianBlur(self.template_image, (21, 21), 0)
