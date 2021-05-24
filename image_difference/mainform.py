@@ -1,9 +1,9 @@
 from PyQt5 import QtCore
 import PyQt5
 from PyQt5.QtWidgets import (QApplication, QWidget, QMainWindow, QLabel, QHBoxLayout, QDockWidget, QFileSystemModel,
-                             QVBoxLayout, QPushButton, QGridLayout, QComboBox, QLineEdit, QTreeView)
-from PyQt5.QtGui import (QPixmap, QImage)
-from PyQt5.QtCore import (pyqtSlot, pyqtSignal, Qt, QDir)
+                             QVBoxLayout, QPushButton, QGridLayout, QComboBox, QLineEdit, QTreeView, QSlider)
+from PyQt5.QtGui import (QPixmap, QImage, QPainter, QPainterPath, QColor)
+from PyQt5.QtCore import (pyqtSlot, pyqtSignal, Qt, QDir, QRectF, QFileInfo)
 import cv2
 import sys
 import imutils
@@ -13,15 +13,26 @@ from streamcapture import streamCapture
 
 class mainForm(QMainWindow):
     get_template_filename = pyqtSignal(str)
-    get_compare_image_filename = pyqtSignal(str)
     exit_program = pyqtSignal()
 
     def __init__(self):
         super().__init__()
+        self.stream = None
+        self.image_difference_thread = None
+        self.template_set = False
+        self._countour_max_tresh = 20000
+        self._countour_min_tresh = 2000
+        self._transparency_max = 10
+        self._transparency_min = 0
+        self._countour_gamma_max = 10
+        self._countour_gamma_min = 1
+        self._color_max = 255
+        self._color_min = 0
         self.screen_resolution = None
         self.grid_layout = None
         self.output_picture = None
         self.initUI()
+        self.init_image_difference()
         if self.webcam_switcher.count() > 0:
             self.webcam_switcher.currentIndex
             self.stream = streamCapture(self.webcam_switcher.currentIndex())
@@ -51,6 +62,7 @@ class mainForm(QMainWindow):
         self.output_picture = QLabel()
         self.grid_layout.addWidget(self.output_picture, 1, 0, 1, 4)
 
+        ### creating right dock
         self.right_dock_layout = QVBoxLayout()
 
         self.right_dock_widget = QDockWidget()
@@ -86,24 +98,129 @@ class mainForm(QMainWindow):
         self.right_dock_layout.addWidget(self.directory_tree_view)
 
         self.load_template_button = QPushButton("Select Template")
+        self.load_template_button.setMaximumSize(self.screen_resolution.width() // 4 - 30, 30)
         self.load_template_button.clicked.connect(self.load_template)
 
         self.right_dock_layout.addWidget(self.load_template_button)
 
         self.create_template_button = QPushButton("Create Template")
+        self.create_template_button.setMaximumSize(self.screen_resolution.width() // 4 - 30, 30)
         self.create_template_button.clicked.connect(self.create_template)
 
-        self.template_image_widget = QWidget()
-        self.template_image_widget.setMinimumSize(self.screen_resolution.width() // 4, self.screen_resolution.width() // 4)
-        self.template_image = QLabel(self.template_image_widget)
-        self.template_image.resize(self.template_image_widget.size())
+        self.right_dock_layout.addWidget(self.create_template_button)
 
-        self.template_image_text = QLabel(self.template_image_widget, text="template")
+        self.template_image_widget = QWidget()
+        self.template_image_widget.setMinimumSize(self.screen_resolution.width() // 4 - 20, self.screen_resolution.width() // 4 - 10)
+
+        self.template_image_back = QLabel(self.template_image_widget)
+        self.template_image_back.resize(self.screen_resolution.width() // 4 - 20, self.screen_resolution.width() // 4 - 10)
+        pix = QPixmap(self.template_image_back.size())
+        pix.fill(Qt.lightGray)
+        rect = QRectF(0.0, 0.0, self.template_image_back.size().width(), self.template_image_back.size().height())
+        painter = QPainter()
+        painter.begin(pix)
+        painter.setRenderHints(QPainter.Antialiasing, True)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 5.0, 5.0)
+        painter.drawPath(path)
+        painter.end()
+        self.template_image_back.setPixmap(pix)
+
+        self.template_image = QLabel(self.template_image_widget)
+        self.template_image.move(5, 5)
+        self.template_image.resize(self.screen_resolution.width() // 4 - 30, self.screen_resolution.width() // 4 - 30)
+
+        self.template_image_text = QLabel(self.template_image_widget, text="Current Template")
+        self.template_image_text.setStyleSheet("font-weight: bold")
+        self.template_image_text.move(self.screen_resolution.width() // 8 - 65, 20)
 
         self.right_dock_layout.addWidget(self.template_image_widget)
 
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.right_dock_widget)
 
+        ### creating bottom dock
+        self.bottom_dock_layout = QGridLayout()
+        self.bottom_dock_layout.setSpacing(10)
+
+        self.bottom_dock_widget = QDockWidget()
+        self.bottom_dock_widget.setMinimumSize(self.screen_resolution.width() // 4 * 3 - 10, self.screen_resolution.height() // 4 - 10)
+        bottom_dock = QWidget(self.bottom_dock_widget)
+        bottom_dock.setMinimumSize(self.screen_resolution.width() // 4 * 3 - 20, self.screen_resolution.height() // 4 - 20)
+        bottom_dock.move(10, 10)
+        bottom_dock.setLayout(self.bottom_dock_layout)
+
+        settings_label = QLabel("Settings:")
+        self.bottom_dock_layout.addWidget(settings_label, 0, 0, 1, 2, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+
+        countour_tresh_label = QLabel("Countour Tresh:")
+        self.bottom_dock_layout.addWidget(countour_tresh_label, 1, 0, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.countour_tresh_slider = QSlider(Qt.Orientation.Horizontal)
+        self.countour_tresh_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.countour_tresh_slider.setRange(self._countour_min_tresh, self._countour_max_tresh)
+        self.bottom_dock_layout.addWidget(self.countour_tresh_slider, 1, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        transparency_weight_label = QLabel("Transparency:")
+        self.bottom_dock_layout.addWidget(transparency_weight_label, 2, 0, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.transparency_weight_slider = QSlider(Qt.Orientation.Horizontal)
+        self.transparency_weight_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.transparency_weight_slider.setRange(self._transparency_min, self._transparency_max)
+        self.bottom_dock_layout.addWidget(self.transparency_weight_slider, 2, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        countour_gamma_label = QLabel("Countour Gamma:")
+        self.bottom_dock_layout.addWidget(countour_gamma_label, 3, 0, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.countour_gamma_slider = QSlider(Qt.Orientation.Horizontal)
+        self.countour_gamma_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.countour_gamma_slider.setRange(self._countour_gamma_min, self._countour_gamma_max)
+        self.bottom_dock_layout.addWidget(self.countour_gamma_slider, 3, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        ### right side of settings
+        countour_color_label = QLabel("Countour Color:")
+        self.bottom_dock_layout.addWidget(countour_color_label, 0, 2, 1, 2, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+
+        r_color_label = QLabel("R:")
+        self.bottom_dock_layout.addWidget(r_color_label, 1, 2, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.r_color_slider = QSlider(Qt.Orientation.Horizontal)
+        self.r_color_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.r_color_slider.setRange(self._color_min, self._color_max)
+        self.r_color_slider.setValue(255)
+        self.bottom_dock_layout.addWidget(self.r_color_slider, 1, 3, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        g_color_label = QLabel("G:")
+        self.bottom_dock_layout.addWidget(g_color_label, 2, 2, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.g_color_slider = QSlider(Qt.Orientation.Horizontal)
+        self.g_color_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.g_color_slider.setRange(self._color_min, self._color_max)
+        self.bottom_dock_layout.addWidget(self.g_color_slider, 2, 3, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        b_color_label = QLabel("B:")
+        self.bottom_dock_layout.addWidget(b_color_label, 3, 2, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.b_color_slider = QSlider(Qt.Orientation.Horizontal)
+        self.b_color_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.b_color_slider.setRange(self._color_min, self._color_max)
+        self.bottom_dock_layout.addWidget(self.b_color_slider, 3, 3, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.bottom_dock_widget)
+
+        self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def init_image_difference(self):
+        self.image_difference_thread = imageDifference()
+        self.get_template_filename.connect(self.image_difference_thread.set_template_image)
+        self.countour_tresh_slider.valueChanged.connect(self.image_difference_thread.set_countour_tresh_value)
+        self.transparency_weight_slider.valueChanged.connect(self.image_difference_thread.set_transparency_weight_value)
+        self.countour_gamma_slider.valueChanged.connect(self.image_difference_thread.set_countour_gamma_value)
+        self.r_color_slider.valueChanged.connect(self.image_difference_thread.set_countour_color_r)
+        self.g_color_slider.valueChanged.connect(self.image_difference_thread.set_countour_color_g)
+        self.b_color_slider.valueChanged.connect(self.image_difference_thread.set_countour_color_b)
+        self.image_difference_thread.output_image_defference.connect(self.mat2qimage)
+        self.image_difference_thread.set_template_picture.connect(self.set_template_picture)
+        self.image_difference_thread.start()
 
     def detect_webcam_devices(self, combo_box):
         _video_capture = cv2.VideoCapture()
@@ -118,18 +235,22 @@ class mainForm(QMainWindow):
     
     def load_template(self):
         index = self.directory_tree_view.selectedIndexes()[0]
-        print("load template, path:", self.file_system_model.filePath(index))
-        self.get_template_filename.emit(self.file_system_model.filePath(index))
+        if not QFileInfo(self.file_system_model.filePath(index)).isDir():
+            # print("load template, path:", self.file_system_model.filePath(index))
+            self.get_template_filename.emit(self.file_system_model.filePath(index))
 
     def create_template(self):
-        print("create template")
+        if self.stream is not None:
+            template_to_save = self.stream.get_current_frame()
+            cv2.imwrite("./examples/template.jpg", template_to_save)
+            print("create template")
 
     pyqtSlot(np.ndarray)
     def mat2qimage(self, image):
         rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.output_picture.size().width(),
-        #                                  self.output_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.output_picture.size().width())                                 
+        rgbImage = cv2.resize(rgbImage, (self.output_picture.size().width(),
+                                         self.output_picture.size().height()))
+        # rgbImage = imutils.resize(rgbImage, height=self.output_picture.height())
         h, w, ch = rgbImage.shape
         bytesPerLine = ch * w
         result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
@@ -138,53 +259,30 @@ class mainForm(QMainWindow):
     pyqtSlot(np.ndarray)
     def set_template_picture(self, image):
         rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.mask_picture.size().width(),
-        #                                  self.mask_picture.size().height()))
+        # rgbImage = cv2.resize(rgbImage, (self.template_image.size().width(),
+        #                                  self.template_image.size().height()))
         rgbImage = imutils.resize(rgbImage, self.template_image.size().width())
         h, w, ch = rgbImage.shape
         bytesPerLine = ch * w
         result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
         self.template_image.setPixmap(QPixmap.fromImage(result_image))
+        if not self.template_set:
+            self.template_set = True
+            self.stream.getframe.disconnect(self.mat2qimage)
+            self.stream.getframe.connect(self.image_difference_thread.get_image)
+            self.image_difference_thread.output_image_defference.connect(self.mat2qimage)
 
-    pyqtSlot(np.ndarray)
-    def set_diff_picture(self, image):
-        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.diff_picture.size().width(),
-        #                                  self.diff_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.diff_picture.size().width())                                 
-        h, w, ch = rgbImage.shape
-        bytesPerLine = ch * w
-        result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-        self.diff_picture.setPixmap(QPixmap.fromImage(result_image))
-    
-    pyqtSlot(np.ndarray)
-    def set_orig_picture(self, image):
-        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # rgbImage = cv2.resize(rgbImage, (self.orig_picture.size().width(),
-        #                                  self.orig_picture.size().height()))
-        rgbImage = imutils.resize(rgbImage, self.orig_picture.size().width())                                 
-        h, w, ch = rgbImage.shape
-        bytesPerLine = ch * w
-        result_image = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-        self.orig_picture.setPixmap(QPixmap.fromImage(result_image))
-    
     def closeEvent(self, event):
         self.exit_program.emit()
         event.accept()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    # stylesheetfile = "example.stylesheet"
+    # stylesheetfile = "dark-orange-green.qss"
     # with open(stylesheetfile,"r") as fh:
     #     app.setStyleSheet(fh.read())
     main = mainForm()
-    image_difference_thread = imageDifference()
-    main.get_template_filename.connect(image_difference_thread.set_template_image)
-    main.get_compare_image_filename.connect(image_difference_thread.get_image)
-    image_difference_thread.output_image_defference.connect(main.mat2qimage)
-    image_difference_thread.set_template_picture.connect(main.set_template_picture)
     # image_difference_thread.set_diff_image.connect(main.set_diff_picture)
     # image_difference_thread.set_orig_image.connect(main.set_orig_picture)
     main.showFullScreen()
-    image_difference_thread.start()
     sys.exit(app.exec_())
