@@ -69,6 +69,7 @@ class mainForm(QMainWindow):
         self.right_dock_layout = QVBoxLayout()
 
         self.right_dock_widget = QDockWidget()
+        self.right_dock_widget.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetFloatable)
         self.right_dock_widget.setMinimumSize(self.screen_resolution.width() // 4, self.screen_resolution.height())
         right_dock = QWidget(self.right_dock_widget)
         right_dock.setMinimumSize(self.screen_resolution.width() // 4, self.screen_resolution.height())
