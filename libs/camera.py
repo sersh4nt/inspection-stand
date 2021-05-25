@@ -20,8 +20,8 @@ class Camera(QObject):
         self.frame = None
 
         if platform.system() == 'Linux':
-            command = "v4l2-ctl -d 0 -c exposure_auto=3"
-            subprocess.call(command, shell=True)
+            # command = f"v4l2-ctl -d {camera_id} -c exposure_auto=3"
+            # subprocess.call(command, shell=True)
             self.cap = cv2.VideoCapture(camera_id, cv2.CAP_V4L2)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
         elif platform.system() == 'Windows':
@@ -40,6 +40,7 @@ class Camera(QObject):
         ret, self.frame = self.cap.read()
         if not ret:
             self.camera_err.emit()
+            return
         if self.mirrored:
             self.frame = cv2.flip(self.frame, 1)
         h, w = self.frame.shape[:2]
@@ -76,6 +77,7 @@ class CameraWidget(QLabel):
     def __init__(self, camera=None, parent=None):
         super(CameraWidget, self).__init__(parent)
         self.frame = None
+        self.frame_ = None
         self.camera = camera if camera else None
         self.frame_size = self.camera.frame_size if camera else None
         if camera:

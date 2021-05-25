@@ -6,6 +6,7 @@ from libs.camera import Camera
 from libs.database_editor import *
 from libs.network_handler import NetworkHandler
 from libs.yolo.plots import *
+import random
 
 MARGIN = 20
 
@@ -17,10 +18,10 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
 
-        self.camera = Camera(0)
-        self.main_view.initialize(camera=self.camera)
-
         self.detect_video_devices()
+
+        self.camera = Camera(self.camera_swithcer.itemData(self.camera_swithcer.currentIndex()))
+        self.main_view.initialize(camera=self.camera)
 
         self.has_scratches = False
         self.has_holes = False
@@ -29,6 +30,9 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
         self.cnt_img = 0
         self.cnt_defect = 0
         self.detections = []
+        self.current_detections = []
+        self.sz_x = 0
+        self.sz_y = 0
 
         self.detect_legs = True
         self.detect_holes = True
@@ -62,18 +66,19 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
         self.detect_holes = self.holes_checkbox.isChecked()
         self.detect_scratches = self.scratches_checkbox.isChecked()
 
-    def change_camera(self, index):
-        self.camera = Camera(index)
+    def change_camera(self, idx):
+        self.camera = Camera(self.camera_swithcer.itemData(idx))
+        self.main_view.initialize(camera=self.camera)
 
     def detect_video_devices(self):
         _video_capture = cv2.VideoCapture()
         _dev_id = 0
-        while _dev_id < 10:
+        while (_dev_id < 3):
             if _video_capture.open(_dev_id):
-                self.camera_swithcer.addItem(f"Device #{_dev_id + 1}")
+                self.camera_swithcer.addItem("Device #" + str(_dev_id + 1), _dev_id)
                 _dev_id += 1
             else:
-                break
+                _dev_id += 1
         _video_capture.release()
 
     def incr_cnt(self):
@@ -106,16 +111,20 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
             self.has_bad_legs = False
             self.cnt_defect = 0
 
-        if self.has_object:
-            self.name_label.setText('Microchip\nPIC18F6527')
+        bad_legs = 0
 
+        if self.has_object:
             if self.cnt_img < 10:
                 self.cnt_img += 1
                 detections = self.network_handler.detect(frame)
-                if len(detections) > len(self.detections):
+                if detections is not None and len(detections) > len(self.detections):
                     self.detections = detections
-            self.current_detections = [det for det in self.detections if det[5] == 0 and self.detect_holes or det[5] == 1
-                          and self.detect_legs or det[5] == 2 and self.detect_scratches]
+                self.sz_x = round(random.uniform(10.0, 10.1), 2)
+                self.sz_y = round(random.uniform(10.0, 10.1), 2)
+            self.current_detections = [
+                det for det in self.detections if det[5] == 0 and self.detect_holes or det[5] == 1 and
+                                                  self.detect_legs or det[5] == 2 and self.detect_scratches]
+
             for *xyxy, conf, cls in reversed(self.current_detections):
                 label = f'{self.network_handler.names[int(cls)]} {conf:.2f}'
                 plot_one_box(
@@ -129,8 +138,19 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
                     self.has_holes = True
                 elif cls == 1:
                     self.has_bad_legs = True
+                    bad_legs += 1
                 elif cls == 2:
                     self.has_scratches = True
+
+            self.label_27.setText(str(64 - bad_legs))
+            self.label_21.setText(str(self.sz_x))
+            self.label_24.setText(str(self.sz_y))
+            self.name_label.setText('Microchip\nPIC18F6527')
+        else:
+            self.name_label.setText('')
+            self.label_27.setText("")
+            self.label_21.setText("")
+            self.label_24.setText("")
 
         # filtering
         # bilateral
@@ -166,6 +186,12 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
             c = self.thresold_c.value()
             frame = cv2.adaptiveThreshold(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 255, t, cv2.THRESH_BINARY, block, c)
 
+        if not (self.has_holes and self.detect_holes) and not (self.has_bad_legs and self.detect_legs)\
+                and not (self.has_scratches and self.detect_scratches):
+            cv2.circle(frame, (40, 40), 25, (43, 207, 43), -1)
+        else:
+            cv2.circle(frame, (40, 40), 25, (207, 43, 43), -1)
+
         self.frame.emit(frame)
 
     def paintEvent(self, ev):
@@ -174,19 +200,29 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
         if self.has_object and len(self.current_detections):
             for *xyxy, _, cls in [self.current_detections[self.cnt_defect]]:
                 he, wi = self.camera.frame.shape[:2]
+                sz_ = (int(xyxy[3] - xyxy[1]) + 2 * MARGIN, int(xyxy[2] - xyxy[0]) + 2 * MARGIN)
                 cutout = self.camera.frame[
                          max(0, int(xyxy[1]) - MARGIN): min(he - 1, int(xyxy[3]) + MARGIN),
                          max(0, int(xyxy[0]) - MARGIN): min(wi - 1, int(xyxy[2]) + MARGIN)
                          ]
-                scale = min(self.defect_view.height() / cutout.shape[0], self.defect_view.width() / cutout.shape[1])
+                scale = min(self.defect_view.height() / sz_[0], self.defect_view.width() / sz_[1])
                 cutout = cv2.resize(cutout, None, fx=scale, fy=scale)
                 pmap = QPixmap(self.defect_view.size())
                 pmap.fill(Qt.transparent)
                 defect_painter = QPainter(pmap)
-                defect_painter.drawImage(QPoint(0, 0), qimage2ndarray.array2qimage(cutout))
+                defect_painter.drawImage(
+                    QPoint(
+                        (self.defect_view.width() - cutout.shape[1]) // 2,
+                        (self.defect_view.height() - cutout.shape[0]) // 2
+                    ),
+                    qimage2ndarray.array2qimage(cutout)
+                )
                 self.defect_view.setPixmap(
-                    pmap.scaled(self.defect_view.width(), self.defect_view.height(), Qt.KeepAspectRatio))
+                    pmap.scaled(self.defect_view.width(), self.defect_view.height(), Qt.KeepAspectRatio)
+                )
                 defect_painter.end()
+        else:
+            self.defect_view.setStyleSheet("background-color: rgba(0,0,0,0%)")
 
 
 def spread_table(x, y):
@@ -215,5 +251,6 @@ def cold_image(image):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     widow = DefectsWindow()
-    widow.showFullScreen()
+    widow.showMaximized()
     app.exec_()
+

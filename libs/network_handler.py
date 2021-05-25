@@ -1,3 +1,5 @@
+import os
+
 from libs.utils import *
 from libs.yolo.general import *
 from libs.yolo.plots import *
@@ -22,7 +24,10 @@ class NetworkHandler:
         torch.multiprocessing.set_start_method('spawn')
 
     def load_network(self):
-        path = os.path.join(self.path, 'defects.pt')
+        path = os.path.join(self.path, 'best.pt')
+        if not os.path.exists(path):
+            self.model = None
+            return
         self.half = self.device.type != 'cpu'
         try:
             del self.model
