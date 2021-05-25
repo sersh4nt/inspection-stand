@@ -71,6 +71,7 @@ class Camera(QObject):
 
 class CameraWidget(QLabel):
     new_frame = pyqtSignal(np.ndarray)
+    new_frame_signal = pyqtSignal()
 
     def __init__(self, camera=None, parent=None):
         super(CameraWidget, self).__init__(parent)
