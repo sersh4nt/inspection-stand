@@ -90,8 +90,6 @@ class CameraWidget(QLabel):
     def _on_new_frame(self, frame):
         self.frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2RGB)
         self.new_frame.emit(self.frame)
-        self.new_frame_signal.emit()
-        self.update()
 
     def changeEvent(self, e):
         if e.type() == QEvent.EnabledChange:
@@ -100,11 +98,16 @@ class CameraWidget(QLabel):
             else:
                 self.camera.new_frame.disconnect(self._on_new_frame)
 
+    @pyqtSlot(np.ndarray)
+    def acquire_frame(self, frame):
+        self.frame_ = frame
+        self.update()
+
     def paintEvent(self, e):
-        if self.frame is None:
+        if self.frame_ is None:
             return
         w, h = self.width(), self.height()
-        scale = max(h / self.frame_size[1], w / self.frame_size[0])
-        frame = cv2.resize(self.frame, None, fx=scale, fy=scale)
+        scale = max(h / self.frame_.shape[0], w / self.frame_.shape[1])
+        frame = cv2.resize(self.frame_, None, fx=scale, fy=scale)
         painter = QPainter(self)
         painter.drawImage(QPoint(0, 0), qimage2ndarray.array2qimage(frame))

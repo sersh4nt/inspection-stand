@@ -8,7 +8,7 @@ class streamCapture(QThread):
 
     def __init__(self, cam):
         super().__init__()
-        self.camip = "v4l2src device=/dev/video"+ str(cam) +" ! jpegdec ! videoconvert ! appsink" 
+        self.camip = "v4l2src device=/dev/video" + str(cam) + " ! jpegdec ! videoconvert ! appsink"
         self.frame = None
         self.cap = None
         self.stop = False
@@ -31,11 +31,11 @@ class streamCapture(QThread):
 
     def exit(self):
         self.stop = True
-    
+
     def get_current_frame(self):
         return self.frame.copy()
 
     def reopenStream(self, cam):
-        self.camip = "v4l2src device=/dev/video"+ str(cam) +" ! jpegdec ! videoconvert ! appsink"
+        self.camip = "v4l2src device=/dev/video" + str(cam) + " ! jpegdec ! videoconvert ! appsink"
         print("reopen")
         self.cap = cv2.VideoCapture(self.camip)
