@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import imutils
 
+
 class imageDifference(QThread):
     output_image_defference = pyqtSignal(np.ndarray)
     set_template_picture = pyqtSignal(np.ndarray)
@@ -35,12 +36,12 @@ class imageDifference(QThread):
         self.busy = True
         buf_image = cv2.GaussianBlur(self.current_image, (21, 21), 0)
         buf_image = self.background_substractor.apply(buf_image, self.template_mask, 0)
-        kernel = np.ones((3,3),np.uint8)
-        buf_image = cv2.dilate(buf_image,kernel,iterations=2)
+        kernel = np.ones((3, 3), np.uint8)
+        buf_image = cv2.dilate(buf_image, kernel, iterations=2)
 
         # self.set_mask_image.emit(buf_image.copy())
         original_image_copy = self.current_image.copy()
-        countours = cv2.findContours(buf_image,  1, cv2.CHAIN_APPROX_SIMPLE)
+        countours = cv2.findContours(buf_image, 1, cv2.CHAIN_APPROX_SIMPLE)
         countours = imutils.grab_contours(countours)
         original_image_copy_grayscale = cv2.cvtColor(original_image_copy, cv2.COLOR_BGR2GRAY)
         original_image_copy_grayscale = cv2.equalizeHist(original_image_copy_grayscale)
@@ -51,9 +52,11 @@ class imageDifference(QThread):
         # self.set_orig_image.emit(self.current_image.copy())
         for countour in countours:
             if cv2.contourArea(countour) > self.countourThresh and cv2.contourArea(countour) < self.max_countour_tresh:
-                cv2.fillPoly(original_image_copy, [countour], (self.countour_color_b, self.countour_color_g, self.countour_color_r))
+                cv2.fillPoly(original_image_copy, [countour],
+                             (self.countour_color_b, self.countour_color_g, self.countour_color_r))
                 # self.set_diff_image.emit(original_image_copy.copy())
-                self.current_image = cv2.addWeighted(original_image_copy, self.transparency_weight, self.current_image, 1 - self.transparency_weight, self.countour_gamma)
+                self.current_image = cv2.addWeighted(original_image_copy, self.transparency_weight, self.current_image,
+                                                     1 - self.transparency_weight, self.countour_gamma)
         self.output_image_defference.emit(self.current_image.copy())
         self.busy = False
 
@@ -64,7 +67,7 @@ class imageDifference(QThread):
         self.set_template_picture.emit(self.template_image.copy())
         self.template_image = cv2.GaussianBlur(self.template_image, (21, 21), 0)
         self.template_mask = self.background_substractor.apply(self.template_image)
-        
+
     @pyqtSlot(int)
     def set_countour_tresh_value(self, val):
         self.countourThresh = val * 2000
@@ -79,15 +82,15 @@ class imageDifference(QThread):
 
     @pyqtSlot(int)
     def set_countour_color_r(self, val):
-         self.countour_color_r = val
-    
+        self.countour_color_r = val
+
     @pyqtSlot(int)
     def set_countour_color_g(self, val):
-         self.countour_color_g = val
+        self.countour_color_g = val
 
     @pyqtSlot(int)
     def set_countour_color_b(self, val):
-         self.countour_color_b = val
+        self.countour_color_b = val
 
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
