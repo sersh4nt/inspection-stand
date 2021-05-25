@@ -2,26 +2,28 @@ from PyQt5 import QtCore
 import PyQt5
 from PyQt5.QtWidgets import (QApplication, QWidget, QMainWindow, QLabel, QHBoxLayout, QDockWidget, QFileSystemModel,
                              QVBoxLayout, QPushButton, QGridLayout, QComboBox, QLineEdit, QTreeView, QSlider)
-from PyQt5.QtGui import (QPixmap, QImage, QPainter, QPainterPath, QColor)
+from PyQt5.QtGui import (QPixmap, QImage, QPainter, QPainterPath)
 from PyQt5.QtCore import (pyqtSlot, pyqtSignal, Qt, QDir, QRectF, QFileInfo)
 import cv2
 import sys
-import imutils
 import numpy as np
-from imagedifference import imageDifference
-from streamcapture import streamCapture
+import imutils
+#sys.path.append("/home/sersh4nt/presentation/image_difference/libs")
+from libs.imagedifference import imageDifference
+from libs.streamcapture import streamCapture
 
 class mainForm(QMainWindow):
     get_template_filename = pyqtSignal(str)
     exit_program = pyqtSignal()
+    camera_changed = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
         self.stream = None
         self.image_difference_thread = None
         self.template_set = False
-        self._countour_max_tresh = 20000
-        self._countour_min_tresh = 2000
+        self._countour_max_tresh = 10
+        self._countour_min_tresh = 1
         self._transparency_max = 10
         self._transparency_min = 0
         self._countour_gamma_max = 10
@@ -34,9 +36,10 @@ class mainForm(QMainWindow):
         self.initUI()
         self.init_image_difference()
         if self.webcam_switcher.count() > 0:
-            self.webcam_switcher.currentIndex
-            self.stream = streamCapture(self.webcam_switcher.currentIndex())
+            self.stream = streamCapture(self.webcam_switcher.itemData(self.webcam_switcher.currentIndex()))
             self.stream.getframe.connect(self.mat2qimage)
+            self.webcam_switcher.currentIndexChanged.connect(self.camera_switcher_index_changed)
+            self.camera_changed.connect(self.stream.reopenStream)
             self.stream.start()
             self.exit_program.connect(self.stream.exit)
     
@@ -78,7 +81,7 @@ class mainForm(QMainWindow):
         self.filter_template_edit = QLineEdit()
         self.filter_template_edit.setPlaceholderText("Filter (Ctr + Alt + f)")
         template_label.setMinimumSize(90, 25)
-        self.filter_template_edit.setStyleSheet("background-image: url(/home/dmitry/work/from_vlad/inspection-stand/image_difference/icons/searchIcon.png); background-repeat: no-repeat; background-position: right;")
+        self.filter_template_edit.setStyleSheet("background-image: url(../image_difference/icons/searchIcon.png); background-repeat: no-repeat; background-position: right;")
 
         self.right_dock_layout.addWidget(self.filter_template_edit)
 
@@ -92,8 +95,10 @@ class mainForm(QMainWindow):
         self.directory_tree_view.hideColumn(1)
         self.directory_tree_view.hideColumn(2)
         self.directory_tree_view.hideColumn(3)
+        # self.directory_tree_view.sortByColumn(0)
+        self.directory_tree_view.setSortingEnabled(True)
         self.directory_tree_view.doubleClicked.connect(self.load_template)
-        self.directory_tree_view.setRootIndex(self.file_system_model.index(QDir.currentPath()))
+        self.directory_tree_view.setRootIndex(self.file_system_model.index("../image_difference/"))
         
         self.right_dock_layout.addWidget(self.directory_tree_view)
 
@@ -158,6 +163,7 @@ class mainForm(QMainWindow):
         self.countour_tresh_slider = QSlider(Qt.Orientation.Horizontal)
         self.countour_tresh_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.countour_tresh_slider.setRange(self._countour_min_tresh, self._countour_max_tresh)
+        self.countour_tresh_slider.setValue(2)
         self.bottom_dock_layout.addWidget(self.countour_tresh_slider, 1, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
 
         transparency_weight_label = QLabel("Transparency:")
@@ -165,6 +171,7 @@ class mainForm(QMainWindow):
 
         self.transparency_weight_slider = QSlider(Qt.Orientation.Horizontal)
         self.transparency_weight_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.transparency_weight_slider.setValue(6)
         self.transparency_weight_slider.setRange(self._transparency_min, self._transparency_max)
         self.bottom_dock_layout.addWidget(self.transparency_weight_slider, 2, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
 
@@ -173,6 +180,7 @@ class mainForm(QMainWindow):
 
         self.countour_gamma_slider = QSlider(Qt.Orientation.Horizontal)
         self.countour_gamma_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.countour_gamma_slider.setValue(8)
         self.countour_gamma_slider.setRange(self._countour_gamma_min, self._countour_gamma_max)
         self.bottom_dock_layout.addWidget(self.countour_gamma_slider, 3, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
 
@@ -225,12 +233,12 @@ class mainForm(QMainWindow):
     def detect_webcam_devices(self, combo_box):
         _video_capture = cv2.VideoCapture()
         _dev_id = 0
-        while(True):
+        while(_dev_id < 3):
             if _video_capture.open(_dev_id):
-                combo_box.addItem("Device #1")
+                combo_box.addItem("Device #" + str(_dev_id + 1), _dev_id)
                 _dev_id += 1
             else:
-                break
+                _dev_id += 1
         _video_capture.release()
     
     def load_template(self):
@@ -242,7 +250,7 @@ class mainForm(QMainWindow):
     def create_template(self):
         if self.stream is not None:
             template_to_save = self.stream.get_current_frame()
-            cv2.imwrite("./examples/template.jpg", template_to_save)
+            cv2.imwrite("../image_difference/examples/template.jpg", template_to_save)
             print("create template")
 
     pyqtSlot(np.ndarray)
@@ -271,6 +279,11 @@ class mainForm(QMainWindow):
             self.stream.getframe.disconnect(self.mat2qimage)
             self.stream.getframe.connect(self.image_difference_thread.get_image)
             self.image_difference_thread.output_image_defference.connect(self.mat2qimage)
+    
+    def camera_switcher_index_changed(self, index):
+        self.camera_changed.emit(self.webcam_switcher.itemData(index))
+        print("current index:", index)
+        print("item data:", self.webcam_switcher.itemData(index))
 
     def closeEvent(self, event):
         self.exit_program.emit()
@@ -286,3 +299,4 @@ if __name__ == '__main__':
     # image_difference_thread.set_orig_image.connect(main.set_orig_picture)
     main.showFullScreen()
     sys.exit(app.exec_())
+    

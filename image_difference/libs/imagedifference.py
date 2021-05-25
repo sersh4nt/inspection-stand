@@ -15,8 +15,8 @@ class imageDifference(QThread):
         self.template_mask = None
         self.current_image = None
         self.diff_image = None
-        self.background_substractor = cv2.createBackgroundSubtractorMOG2(1, 25, False)
-        self.countourThresh = 6000
+        self.background_substractor = cv2.createBackgroundSubtractorMOG2(1, 40, False)
+        self.countourThresh = 2000
         self.max_countour_tresh = 1036800
         self.transparency_weight = 0.4
         self.countour_gamma = 0.8
@@ -67,11 +67,11 @@ class imageDifference(QThread):
         
     @pyqtSlot(int)
     def set_countour_tresh_value(self, val):
-        self.countourThresh = val
+        self.countourThresh = val * 2000
 
     @pyqtSlot(int)
     def set_transparency_weight_value(self, val):
-        self.transparency_weight = float(val / 10)
+        self.transparency_weight = float(1 - val / 10)
 
     @pyqtSlot(int)
     def set_countour_gamma_value(self, val):

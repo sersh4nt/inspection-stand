@@ -36,6 +36,6 @@ class streamCapture(QThread):
         return self.frame.copy()
 
     def reopenStream(self, cam):
-        self.camip = cam
+        self.camip = "v4l2src device=/dev/video"+ str(cam) +" ! jpegdec ! videoconvert ! appsink"
+        print("reopen")
         self.cap = cv2.VideoCapture(self.camip)
-
