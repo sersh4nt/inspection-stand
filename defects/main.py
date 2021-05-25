@@ -1,21 +1,18 @@
-import sys
-
 import imutils
-import qimage2ndarray
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
+from scipy.interpolate import UnivariateSpline
 
+from design import Ui_MainWindow
 from libs.camera import Camera
+from libs.database_editor import *
 from libs.network_handler import NetworkHandler
 from libs.yolo.plots import *
-from new_design import Ui_MainWindow
-from libs.database_editor import *
 
 MARGIN = 20
 
 
 class DefectsWindow(QMainWindow, Ui_MainWindow):
+    frame = pyqtSignal(np.ndarray)
+
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -54,10 +51,11 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
         self.legs_checkbox.stateChanged.connect(self.checkbox_changed)
         self.holes_checkbox.stateChanged.connect(self.checkbox_changed)
         self.scratches_checkbox.stateChanged.connect(self.checkbox_changed)
+        self.frame.connect(self.main_view.acquire_frame)
 
     def show_database_editor(self):
         self.database_editor.stream_enabled = True
-        self.database_editor.show()
+        self.database_editor.showFullScreen()
 
     def checkbox_changed(self):
         self.detect_legs = self.legs_checkbox.isChecked()
@@ -81,13 +79,13 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
     def incr_cnt(self):
         if self.has_object:
             self.cnt_defect += 1
-            self.cnt_defect %= len(self.detections)
+            self.cnt_defect %= len(self.current_detections)
 
     def decr_cnt(self):
         if self.has_object:
             self.cnt_defect -= 1
             if self.cnt_defect < 0:
-                self.cnt_defect += len(self.detections)
+                self.cnt_defect += len(self.current_detections)
 
     @pyqtSlot(np.ndarray)
     def new_frame(self, frame):
@@ -102,6 +100,7 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
             self.has_object = False
             self.cnt_img = 0
             self.detections = []
+            self.current_detections = []
             self.has_holes = False
             self.has_scratches = False
             self.has_bad_legs = False
@@ -115,28 +114,65 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
                 detections = self.network_handler.detect(frame)
                 if len(detections) > len(self.detections):
                     self.detections = detections
-            for *xyxy, conf, cls in reversed(self.detections):
-                if cls == 0 and self.detect_holes or cls == 1 and self.detect_legs or cls == 2 and self.detect_scratches:
-                    label = f'{self.network_handler.names[int(cls)]} {conf:.2f}'
-                    plot_one_box(
-                        xyxy,
-                        frame,
-                        label=label,
-                        color=self.network_handler.colours[int(cls)],
-                        line_thickness=2
-                    )
-                    if cls == 0:
-                        self.has_holes = True
-                    elif cls == 1:
-                        self.has_bad_legs = True
-                    elif cls == 2:
-                        self.has_scratches = True
+            self.current_detections = [det for det in self.detections if det[5] == 0 and self.detect_holes or det[5] == 1
+                          and self.detect_legs or det[5] == 2 and self.detect_scratches]
+            for *xyxy, conf, cls in reversed(self.current_detections):
+                label = f'{self.network_handler.names[int(cls)]} {conf:.2f}'
+                plot_one_box(
+                    xyxy,
+                    frame,
+                    label=label,
+                    color=self.network_handler.colours[int(cls)],
+                    line_thickness=2
+                )
+                if cls == 0:
+                    self.has_holes = True
+                elif cls == 1:
+                    self.has_bad_legs = True
+                elif cls == 2:
+                    self.has_scratches = True
+
+        # filtering
+        # bilateral
+        if self.checkBox.isChecked():
+            diameter = self.diameter_slider.value()
+            color = self.sigmacolor_slider.value()
+            space = self.sigmaspace_slider.value()
+            frame = cv2.bilateralFilter(frame, diameter, color, space)
+
+        # box
+        if self.checkBox_2.isChecked():
+            k = self.boxfilter_kernel.value()
+            kernel = np.ones((k, k), np.float32) / (k * k)
+            frame = cv2.filter2D(frame, -1, kernel)
+
+        # filter 2d
+        if self.checkBox_3.isChecked():
+            k = self.filter2d_kernel.value()
+            kernel = np.ones((k, k), np.float32) / (k * k)
+            frame = cv2.filter2D(frame, -1, kernel)
+
+        # lookup table
+        if self.checkBox_4.isChecked():
+            if self.lookup_type.value() == 1:
+                frame = cold_image(frame)
+            elif self.lookup_type.value() == -1:
+                frame = warm_image(frame)
+
+        # adaptive treshold
+        if self.checkBox_5.isChecked():
+            t = cv2.ADAPTIVE_THRESH_MEAN_C if self.threshold_type.currentIndex() == 0 else cv2.ADAPTIVE_THRESH_GAUSSIAN_C
+            block = int(self.thresold_block.value()) * 2 + 3
+            c = self.thresold_c.value()
+            frame = cv2.adaptiveThreshold(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 255, t, cv2.THRESH_BINARY, block, c)
+
+        self.frame.emit(frame)
 
     def paintEvent(self, ev):
         super(DefectsWindow, self).paintEvent(ev)
 
-        if self.has_object and len(self.detections):
-            for *xyxy, _, cls in [self.detections[self.cnt_defect]]:
+        if self.has_object and len(self.current_detections):
+            for *xyxy, _, cls in [self.current_detections[self.cnt_defect]]:
                 he, wi = self.camera.frame.shape[:2]
                 cutout = self.camera.frame[
                          max(0, int(xyxy[1]) - MARGIN): min(he - 1, int(xyxy[3]) + MARGIN),
@@ -153,8 +189,31 @@ class DefectsWindow(QMainWindow, Ui_MainWindow):
                 defect_painter.end()
 
 
+def spread_table(x, y):
+    spline = UnivariateSpline(x, y)
+    return spline(range(256))
+
+
+def warm_image(image):
+    increaseLookupTable = spread_table([0, 64, 128, 256], [0, 80, 160, 256])
+    decreaseLookupTable = spread_table([0, 64, 128, 256], [0, 50, 100, 256])
+    red_channel, green_channel, blue_channel = cv2.split(image)
+    red_channel = cv2.LUT(red_channel, increaseLookupTable).astype(np.uint8)
+    blue_channel = cv2.LUT(blue_channel, decreaseLookupTable).astype(np.uint8)
+    return cv2.merge((red_channel, green_channel, blue_channel))
+
+
+def cold_image(image):
+    increaseLookupTable = spread_table([0, 64, 128, 256], [0, 80, 160, 256])
+    decreaseLookupTable = spread_table([0, 64, 128, 256], [0, 50, 100, 256])
+    red_channel, green_channel, blue_channel = cv2.split(image)
+    red_channel = cv2.LUT(red_channel, decreaseLookupTable).astype(np.uint8)
+    blue_channel = cv2.LUT(blue_channel, increaseLookupTable).astype(np.uint8)
+    return cv2.merge((red_channel, green_channel, blue_channel))
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     widow = DefectsWindow()
-    widow.show()
+    widow.showFullScreen()
     app.exec_()
